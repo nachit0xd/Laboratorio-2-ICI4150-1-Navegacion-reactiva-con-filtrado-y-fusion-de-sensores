@@ -11,3 +11,20 @@ Para resolver el problema del ruido se emplean diferentes estrategias: combinaci
 
 En este laboratorio se busca aplicar el filtro de Kalman para producir estimaciones más estables bajo diferentes contextos. Con el uso de simulaciones de un robot diferencial (e-puck) en diferentes escenarios, se implementa una estrategia de navegación reactiva basada en la percepción. El sistema implementado usa la odometría de un robot, es decir, un avance estimado con encoders, y las lecturas de los sensores frontales infrarrojos en un esquema de fusión sensorial con Kalman, logrando que el robot estime con precisión la proximidad de obstáculos y mejorando sus decisiones de movimiento a diferencia de otros métodos de filtrado.
 # Objetivos
+El objetivo central del laboratorio es implementar un sistema simple de navegación reactiva con un e-puck en la plataforma de simulación Webots, usando sensores de distancia y encoders, aplicando un filtrado de Kalman para estimar la distancia de obstáculos frontales y mejorar la toma de desiciones y navegación del robot.
+
+Los objetivos específicos a considerar son:
+- Adquirir datos, con cierta frecuencia de muestreo, de los sensores frontales, laterales y encoders de ruedas del e-puck.
+- Estimar el movimiento y avance del robot mediante odometría (giro angular de los encoders) para un modelo de predicción.
+- Implementar un filtro de Kalman con sus dos etapas: predicción (movimiento del robot) y corrección (medición del entorno).
+- Desarrollar reglas de decisión usando la distancia calculada por Kalman para estimar cuando debe avanzar o girar ante un obstáculo.
+- Graficar y realizar una comparación de los datos crudos del sistema, las señales con un filtro simple aplicado y la estimación final de Kalman.
+# Descripción del robot y el entorno
+
+# Desarrollo e implementación
+
+# Resultados y desempeño en escenarios de prueba
+
+# Conclusiones
+
+# ¿Cómo ejecutar la simulación en Webots?
