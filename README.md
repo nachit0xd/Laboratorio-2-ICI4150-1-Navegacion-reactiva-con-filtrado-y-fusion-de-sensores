@@ -40,6 +40,30 @@ Con esta configuración se reducen los errores de la odometría y permite al con
 A continuación entraremos en detalle sobre el proceso de diseño del controlador, desde una perspectiva teórica y el procesamiento de señales simples hasta la implementación completa de un algoritmo de fusión sensorial.
 
 ## Estimación del avance con encoders
+Para lograr la predicción con el filtro, se implementó un sistema de **odometría simple** que transforma el movimiento angular de las ruedas en desplazamiento lineal del robot. Con el radio de la rueda del e-puck ($r = 0.0205 m$), se aplicó la relación $s = r \cdot \theta$, donde $\theta$ es la diferencia de posición registrada por los encoders entre cada paso. El avance neto o $\Delta d$ se calculó con el promedio del desplazamiento de ambas ruedas, entregando una estimación de cuánto debería haber cambiado la distancia hacia el obstáculo frontal
+
+## Análisis de señales y Filtro Simple 
+Las lecturas "puras" o crudas de los sensores presentan fluctuaciones debido al ruido de la simulación y la sensibilidad de los receptores. Para suavizar esas señales, se implementó un filtro de **Media Móvil Exponencial** o **EMA**, el cual le da mayor valor a los datos recientes y menos a los antiguos de forma exponencial. 
+
+Se utilizó un factor de suavizado $\alpha = 0.2$ en la ecuación:
+
+$y_k = a \cdot z_k + (1 - \alpha) \cdot y_{k - 1}$
+
+Se observó que, mediante el análisis de los datos registrados, aunque el filtro EMA estabiliza la señal, se introduce un retraso o latencia significativo que afecta la integridad del robot al realizar maniobras de alta velocidad, es decir, existe una alta posibilidad de el robot choque contra los obstáculos.
+
+## Implementación del Filtro de Kalman
+El **Filtro de Kalman** es un algoritmo recursivo que combina las mediciones de un sensor con un modelo matemático, ponderando la confianza en cada uno para reducir la **incertidumbre**. Se usa el filtro de Kalman en este laboratorio para lograr una estimación más robusta y reactiva de la distancia frontal. El algoritmo se divide en dos etapas, ya mencionadas anteriormente:
+- **Etapa de predicción:** Se proyectó la nueva distancia estimada ($\hat{d}_{k}^{-}$) restando el avance lineal ($\Delta d$) a la estimación anterior. Además, se actualizó la incertidumbre del sistema sumando el ruido del proceso ($Q$).
+- **Etapa de corrección:** Se calculó la **Ganancia de Kalman** ($K_k$), factor de peso que determina cuánto debe confiar el filtro en la nueva medición, comparando la incertidumbre de la predicción frente al ruido de la medición ($R$). Finalmente, se ajustó la predicción con la lectura real del sensor para obtener la distancia actualizada ($\hat{d}_k$).
+
+Para obtener una respuesta más óptima, se establecieron los parámetros a $Q = 0.05$ y $R = 0.01$, priorizando la velocidad de respuesta sobre la suavidad.
+
+## Lógica de Navegación Reactiva
+Las decisiones tomadas por el robot se basan en la distancia estimada por el filtro de Kalman, con las siguientes reglas de comportamiento:
+1. **Estado de avance:** Si la distancia estimada es superior al umbral de seguridad ($0.04 m$), el robot avanza linealmente a una velocidad constante.
+2. **Estado de evasión:** Si la distancia cae por debajo del umbral de seguridad, se activa una maniobra de giro rápido sobre el propio eje del robot.
+3. **Sentido del giro:** El robot gira a su izquierda o derecha al comparar las lecturas de los sensores laterales, girando hacia el lado con mayor espacio libre.
+4. **Tiempo de giro:** Para solucionar el problema de colisiones concurrentes y giros sin completar, se añadió un contador que obliga al robot a mantener la rotación durante 10 pasos (0.5 segundos), asegurando que logre escapar del ángulo de colisión antes de avanzar nuevamente.
 
 # Resultados y desempeño en escenarios de prueba
 
