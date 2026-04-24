@@ -37,6 +37,9 @@ Se estableció una **frecuencia de muestreo** para los sensores con tal de asegu
 Con esta configuración se reducen los errores de la odometría y permite al controlador procesar las señales, actualizar sus estimaciones y tomar decisiones sincronizadas con el entorno virtual.
 
 # Desarrollo e implementación
+A continuación entraremos en detalle sobre el proceso de diseño del controlador, desde una perspectiva teórica y el procesamiento de señales simples hasta la implementación completa de un algoritmo de fusión sensorial.
+
+## Estimación del avance con encoders
 
 # Resultados y desempeño en escenarios de prueba
 
