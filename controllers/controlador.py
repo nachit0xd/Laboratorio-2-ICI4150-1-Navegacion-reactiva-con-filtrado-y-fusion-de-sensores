@@ -47,8 +47,8 @@ d_est = 0.06 # Distancia inicial estimada (ej: 0.06 metros libre al frente)
 P = 1.0     # Incertidumbre inicial (covarianza)
 
 # Constantes de sintonización del filtro (se pueden ajustar para mejorar el rendimiento)
-Q = 0.05 # Ruido del proceso (incertidumbre en nuestra odometría/motores)
-R = 0.01  # Ruido de la medición (varianza/incertidumbre del sensor infrarrojo)
+Q = 0.01 # Ruido del proceso (incertidumbre en nuestra odometría/motores)
+R = 0.05  # Ruido de la medición (varianza/incertidumbre del sensor infrarrojo)
 
 # VARIABLES DE ALMACENAMIENTO
 raw_front_data = [] # Para guardar las lecturas crudas convertidas a metros (z_k) para gráficos finales
@@ -59,25 +59,30 @@ kalman_front_data = [] # Para guardar la estimación fusionada
 prev_left_enc = 0.0
 prev_right_enc = 0.0
 first_step = True
-alpha = 0.2
+alpha = 0.3
 filtered_val = 0.0
 
 # Umbral de seguridad para la navegación (en metros)
-SAFE_DIST = 0.04 # Si el Kalman estima que hay un obstáculo a 4 cm o menos, se activa la evasión forzada
+SAFE_DIST = 0.09 # Si el Kalman estima que hay un obstáculo a 9 cm o menos, se activa la evasión forzada
 
 # Un temporizador para obligar al robot a completar el giro, importante para evitar que se quede atascado en situaciones de obstáculos cercanos
 turn_timer = 0
 
+# Variables para modo de evasión
+evasion_mode = False 
+evasion_steps = 0
+MAX_EVASION_STEPS = 45  # ~2.25 segundos de evasión
+
 # Función que convierte la lectura cruda del sensor (0-4095) a una distancia en metros, basada en una tabla de conversión o fórmula específica del sensor
 def convertir_sensor_a_metros(valor_crudo):
-    distancia_maxima = 0.06 
+    if valor_crudo <= 50:
+        return 0.10  # Libre (>10cm)
+    elif valor_crudo >= 3800:
+        return 0.01  # Muy cerca (1cm)
     
-    if valor_crudo <= 10: 
-        return distancia_maxima # Camino libre
-    elif valor_crudo >= 4000:
-        return 0.005 # Chocando inminentemente
-    
-    return distancia_maxima - (valor_crudo / 4095.0) * distancia_maxima
+    # Modelo ajustado al rango del e-puck
+    distancia = 0.12 * (1 - valor_crudo / 4000.0)
+    return max(0.01, min(0.12, distancia))
 
 # INICIO DEL CONTROLADOR
 print("Controlador iniciado. Comenzando simulación...")
@@ -120,6 +125,10 @@ while robot.step(TIME_STEP) != -1:
     # ETAPA DE PREDICCIÓN
     # El laboratorio define la predicción como la suma del estado anterior y el avance
     d_pred = d_est - delta_d 
+
+    # Evitamos que la predicción sea negativa
+    if d_pred < 0.01:
+        d_pred = 0.01
     
     # Proyectamos la incertidumbre sumando el ruido del proceso (Q)
     P_pred = P + Q 
@@ -130,41 +139,87 @@ while robot.step(TIME_STEP) != -1:
     
     # Actualizamos la estimación fusionando la predicción y la medición 
     d_est = d_pred + K * (z_k - d_pred) 
+
+    # Ajustamos la estimación a un rango realista
+    d_est = max(0.01, min(0.12, d_est))
     
     # Actualizamos la incertidumbre para la próxima iteración
     P = (1.0 - K) * P_pred 
 
     # 5. NAVEGACIÓN REACTIVA (Con evasión forzada)
-    
     val_left = left_sensor.getValue()
     val_right = right_sensor.getValue()
+    val_fr = front_right_sensor.getValue()
+    val_fl = front_left_sensor.getValue()
+
+    # Detección de peligro
+    avg_front = (val_fr + val_fl) / 2.0
+    front_dist = convertir_sensor_a_metros(avg_front)
+    left_dist = convertir_sensor_a_metros(val_left) if val_left > 50 else 0.12
+    right_dist = convertir_sensor_a_metros(val_right) if val_right > 50 else 0.12
     
     vL = 0.0
     vR = 0.0
 
-    # Si detectamos un obstáculo, activamos el temporizador de giro (turn_timer) para forzar al robot a completar un giro evasivo, incluso si el sensor frontal ya no detecta el obstáculo
-    if d_est <= SAFE_DIST:
-        turn_timer = 10 
+    # LÓGICA DE EVASIÓN y MOVIMIENTO
+    # Si el Kalman estima que hay un obstáculo a 9 cm o menos, o si el sensor frontal detecta algo muy cercano, activamos la evasión forzada
+    if d_est <= SAFE_DIST or front_dist <= SAFE_DIST:
+        if evasion_steps == 0:
+            evasion_mode = True
+            evasion_steps = MAX_EVASION_STEPS
+            print(f"OBSTÁCULO DETECTADO! d_est={d_est:.3f}m, front_dist={front_dist:.3f}m") # Agregamos esta impresión para ver cuándo se activa la evasión
 
-    # LÓGICA DE MOVIMIENTO
-    if turn_timer > 0:
-        # MIENTRAS EL TEMPORIZADOR ESTÉ ACTIVO: GIRO EVASIVO, no importa lo que diga el sensor frontal. Esto ayuda a evitar que el robot se quede atascado en situaciones de obstáculos cercanos
-        if val_left > val_right:
-            vL = MAX_SPEED 
-            vR = -MAX_SPEED 
+    # Si estamos en modo de evasión, seguimos la estrategia definida, que incluye una fase de retroceso antes del giro, y luego una fase de reanudación gradual
+    if evasion_steps > 0:
+        # ESTRATEGIA DE EVASIÓN: Retroceder y girar
+        if evasion_steps > MAX_EVASION_STEPS * 0.7:
+            # FASE 1: Retroceder (0.5-1 segundo)
+            vL = -MAX_SPEED * 0.6
+            vR = -MAX_SPEED * 0.6
+        elif evasion_steps > MAX_EVASION_STEPS * 0.3:
+            # FASE 2: Girar hacia el lado con más espacio
+            if left_dist > right_dist:
+                vL = -MAX_SPEED * 0.5
+                vR = MAX_SPEED * 0.5
+                print("  Giro a la izquierda")
+            else:
+                vL = MAX_SPEED * 0.5
+                vR = -MAX_SPEED * 0.5
+                print("  Giro a la derecha")
         else:
-            vL = -MAX_SPEED 
-            vR = MAX_SPEED 
-            
-        turn_timer -= 1 # Restamos 1 al temporizador en cada ciclo
+            # FASE 3: Reanudar avance gradualmente
+            vL = MAX_SPEED * 0.3
+            vR = MAX_SPEED * 0.3
         
+        evasion_steps -= 1
+        if evasion_steps == 0:
+            evasion_mode = False
+            print("EVASIÓN COMPLETADA, reanudando marcha")
     else:
-        # CAMINO LIBRE Y TEMPORIZADOR EN CERO, AVANZAMOS CON VELOCIDAD MODERADA
-        vL = MAX_SPEED * 0.4
-        vR = MAX_SPEED * 0.4
+        # CAMINO LIBRE - Avance normal con detección de pasillos/paredes
+        base_speed = MAX_SPEED * 0.35
+    
+        # Si hay pared lateral, centrar el robot (comportamiento de seguir pared)
+        lateral_correction = 0
+        if left_dist < 0.07 and left_dist > 0.02:
+            lateral_correction = 0.3  # Gira ligeramente a la derecha
+        elif right_dist < 0.07 and right_dist > 0.02:
+            lateral_correction = -0.3  # Gira ligeramente a la izquierda
+    
+        vL = base_speed * (1 - lateral_correction)
+        vR = base_speed * (1 + lateral_correction)
 
     # Imprimir para depurar y ver cómo evolucionan las lecturas y la acción tomada
-    print(f"Crudo(m): {z_k:.3f} | Kalman(m): {d_est:.3f} | Acción: {'AVANZA' if d_est > SAFE_DIST else 'GIRA'}")
+    print(f"FRENTE: Crudo={z_k:.3f}m | Kalman={d_est:.3f}m | Front_IR={front_dist:.3f}m", end="")
+    if evasion_steps > 0:
+        print(f" | EVASIÓN ({evasion_steps})", end="")
+        if evasion_steps > MAX_EVASION_STEPS * 0.7:
+            print(" [RETROCESO]", end="")
+        elif evasion_steps > MAX_EVASION_STEPS * 0.3:
+            print(" [GIRO]", end="")
+        else:
+            print(" [REANUDANDO]", end="")
+    print()
 
     # Aplicamos velocidades
     left_motor.setVelocity(vL)
