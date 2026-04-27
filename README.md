@@ -53,17 +53,23 @@ Se observó que, mediante el análisis de los datos registrados, aunque el filtr
 
 ## Implementación del Filtro de Kalman
 El **Filtro de Kalman** es un algoritmo recursivo que combina las mediciones de un sensor con un modelo matemático, ponderando la confianza en cada uno para reducir la **incertidumbre**. Se usa el filtro de Kalman en este laboratorio para lograr una estimación más robusta y reactiva de la distancia frontal. El algoritmo se divide en dos etapas, ya mencionadas anteriormente:
-- **Etapa de predicción:** Se proyectó la nueva distancia estimada ($\hat{d}_{k}^{-}$) restando el avance lineal ($\Delta d$) a la estimación anterior. Además, se actualizó la incertidumbre del sistema sumando el ruido del proceso ($Q$).
+- **Etapa de predicción:** Se proyectó la nueva distancia estimada ($\hat{d}_{k}^{-}$) restando el avance lineal ($\Delta d$) a la estimación anterior. Se actualizó la incertidumbre del sistema sumando el ruido del proceso ($Q$). Para evitar divergencias matemáticas ante movimientos bruscos, la predicción se acotó a los límites físicos del sensor infrarrojo (entre 0.01 y 0.12 metros).
 - **Etapa de corrección:** Se calculó la **Ganancia de Kalman** ($K_k$), factor de peso que determina cuánto debe confiar el filtro en la nueva medición, comparando la incertidumbre de la predicción frente al ruido de la medición ($R$). Finalmente, se ajustó la predicción con la lectura real del sensor para obtener la distancia actualizada ($\hat{d}_k$).
 
-Para obtener una respuesta más óptima, se establecieron los parámetros a $Q = 0.05$ y $R = 0.01$, priorizando la velocidad de respuesta sobre la suavidad.
+Para obtener una respuesta más óptima, se establecieron los parámetros a $Q = 0.01$ y $R = 0.05$, priorizando la velocidad de respuesta sobre la suavidad.
 
 ## Lógica de Navegación Reactiva
-Las decisiones tomadas por el robot se basan en la distancia estimada por el filtro de Kalman, con las siguientes reglas de comportamiento:
-1. **Estado de avance:** Si la distancia estimada es superior al umbral de seguridad ($0.04 m$), el robot avanza linealmente a una velocidad constante.
-2. **Estado de evasión:** Si la distancia cae por debajo del umbral de seguridad, se activa una maniobra de giro rápido sobre el propio eje del robot.
-3. **Sentido del giro:** El robot gira a su izquierda o derecha al comparar las lecturas de los sensores laterales, girando hacia el lado con mayor espacio libre.
-4. **Tiempo de giro:** Para solucionar el problema de colisiones concurrentes y giros sin completar, se añadió un contador que obliga al robot a mantener la rotación durante 10 pasos (0.5 segundos), asegurando que logre escapar del ángulo de colisión antes de avanzar nuevamente.
+Las decisiones tomadas por el robot se basan en la distancia estimada por el filtro de Kalman y el umbral de seguridad (0.09 metros), con dos posibles estados:
+1. **Estado de avance y centrado:** Si la distancia frontal estimada se mantiene por encima del umbral de seguridad, el robot avanza. Además, se implementa una corrección lateral continua: si los sensores laterales detectan paredes a menos de 7 cm, el controlador aplica una corrección diferencial a las ruedas (`lateral_correction = 0.3`). Esto permite que el robot se auto-centre dinámicamente y navegue por pasillos estrechos fluidamente, evitando colisiones laterales en "zig-zag".
+2. **Estado de evasión:** Si la distancia frontal estimada (o la lectura cruda promediada de seguridad) cae por debajo del umbral, se bloquea el estado de avance y se activa una maniobra evasiva obligatoria de 2 segundos aproximadamente (45 pasos de simulación), la cual se divide en tres fases:
+
+   A) **Retroceso:** El robot invierte ambas marchas para despegarse físicamente del obstáculo y evitar puntos ciegos contra los que podría chocar.
+   
+   B) **Giro:** El robot rota sobre su propio eje, evaluando los sensores laterales, para dirigir el escape hacia la zona con mayor espacio libre.
+   
+   C) **Continuar:** El robot retoma el avance hacia adelante gradualmente antes de devolver el control al estado de avance principal.
+
+Esta lógica de navegación permite que el e-puck pueda moverse de forma ininterrumpida y sin problemas de oscilación o en las esquinas (chattering).
 
 # Resultados y desempeño en escenarios de prueba
 
