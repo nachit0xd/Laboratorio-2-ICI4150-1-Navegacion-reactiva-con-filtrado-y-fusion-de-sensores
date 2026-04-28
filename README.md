@@ -75,14 +75,22 @@ Esta lógica de navegación permite que el e-puck pueda moverse de forma ininter
 
 ## Análisis Gráfico de la Fusión Sensorial
 Para comprobar la efectividad de la estimación de Kalman y el comportamiento del robot, se extrajeron los datos de navegación durante un periodo de prueba continuo (30 segundos) en un entorno con obstáculos y se graficaron las tres señales principales (crudo, EMA, Kalman):
-![Grafico Kalman](Laboratorio-2-ICI4150-1-Navegacion-reactiva-con-filtrado-y-fusion-de-sensores/media/grafico_kalman.png)
+
+![Grafico Kalman](media/grafico_kalman.png)
+
 Al observar la gráfica, se destacan cuatro eventos clave que validan la superioridad del sistema implementado:
 
 1. **Reacción del Filtro de Kalman (Predicción):**
 2. **Maniobra Evasiva (Retroceso):**
 3. **Acotamiento Matemático (Clamping):**
 4. **Centrado Dinámico:**
-   
+
+## Resultados en los Escenarios de Prueba
+
+### Escenario simple (pocos obstáculos):
+
+### Escenario complejo (varios obstáculos y pasillos estrechos):
+
 # Conclusiones
 
 # ¿Cómo ejecutar la simulación en Webots?
