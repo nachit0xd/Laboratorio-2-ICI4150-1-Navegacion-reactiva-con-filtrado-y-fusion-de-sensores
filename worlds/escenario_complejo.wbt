@@ -1,0 +1,81 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/solids/protos/SolidBox.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.49780367918670354 0.4866909869377565 0.7178602790388489 1.934596646885939
+  position 0.13767821978079858 -0.38329959260811663 0.7442349747055581
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+}
+SolidBox {
+  translation 0.22 0.31 0.05
+  rotation 0 0 1 1.5708
+  name "box(5)"
+  size 0.025 0.4 0.1
+}
+SolidBox {
+  translation 0.27 -0.34 0.05
+  rotation 0 0 1 1.5708
+  name "box(6)"
+  size 0.025 0.4 0.1
+}
+SolidBox {
+  translation 0.05 0.15 0.05
+  rotation 0 0 1 -1.5707953071795862
+  name "box(2)"
+  size 0.025 0.4 0.1
+}
+SolidBox {
+  translation 0.16 -0.05 0.05
+  rotation 0 0 1 1.5708
+  name "box(1)"
+  size 0.025 0.1 0.1
+}
+SolidBox {
+  translation -0.05 0.06 0.05
+  rotation 0 0 1 1.5708
+  name "box(7)"
+  size 0.1 0.1 0.1
+}
+SolidBox {
+  translation -0.0199991 -0.21 0.05
+  rotation 0 0 1 1.5708
+  name "box(9)"
+  size 0.1 0.1 0.1
+}
+SolidBox {
+  translation 0.33 -0.25 0.05
+  rotation 0 0 1 1.5708
+  name "box(8)"
+  size 0.1 0.1 0.1
+}
+SolidBox {
+  translation 0.1 -0.14 0.05
+  name "box(3)"
+  size 0.025 0.2 0.1
+}
+SolidBox {
+  translation -0.14 -0.04 0.05
+  size 0.025 0.4 0.1
+}
+SolidBox {
+  translation 0.41 0.05 0.05
+  name "box(4)"
+  size 0.025 0.4 0.1
+}
+E-puck {
+  translation -1.0285e-06 -0.09 0
+  rotation 0 0 1 1.5708
+  controller "controlador"
+}

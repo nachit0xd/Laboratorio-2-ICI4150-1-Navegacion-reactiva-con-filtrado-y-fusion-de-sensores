@@ -92,7 +92,7 @@ Con un controlador especializado que implementa todo lo presentado en las seccio
 
 Para comprobar la efectividad de la estimación de Kalman y el comportamiento del robot, se extrajeron los datos de navegación durante el periodo de prueba continuo (30 segundos) en el entorno con obstáculos simples (ver `escenario_simple.mp4` para comparar con el gráfico) y se graficaron las tres señales principales (crudo, EMA, Kalman):
 
-![Grafico Kalman](media/grafico_kalman.png)
+![Grafico Kalman](plots/grafico_kalman.png)
 
 Al observar la gráfica, podemos dividir el gráfico en secciones: 1) Encuentro con primer obstáculo (0-5 segundos), 2) Encuentro con segundo obstáculo (8-15 segundos), 3) Encuentro con pared (18-22 segundos) y 4) Encuentro con tercer obstáculo (25-30 segundos). El e-puck se comporta de forma similar en cada uno de los obstáculos:
 
@@ -117,4 +117,14 @@ El controlador fue evaluado en dos escenarios distintos: simple (pocos obstácul
 
 # Conclusiones
 
+El desarrollo de este laboratorio nos permitió evidenciar los desafíos de la robótica móvil en entornos que simulan la realidad, específicamente el compromiso entre la eliminación del ruido de una señal y la velocidad de reacción. Se demostró empíricamente que filtros estadísticos simples como el EMA introducen retrasos inaceptables para la navegación a altas velocidades.
+
+Por otro lado, el Filtro de Kalman demostró ser una herramienta esencial de fusión sensorial, logrando limpiar el ruido infrarrojo apoyándose en la cinemática del robot (odometría) sin afectar el tiempo de respuesta. Además, se concluye que un procesamiento de señales completa debe ir acompañado de una lógica de control robusta; la transición de una simple evasión reactiva a una máquina de estados (retroceso, giro, centrado) fue vital para que el robot superara con éxito entornos complejos sin quedar atrapado en oscilaciones locales, como el chattering.
+
 # ¿Cómo ejecutar la simulación en Webots?
+
+1. Descarga el repositorio completo (.zip) y el entorno de simulación [Webots](https://cyberbotics.com/) en su versión más reciente.
+2. En la carpeta `\worlds` del proyecto, encontrarás los escenarios de simulación simple y complejo. Abre cualquiera desde Webots en `File > Open World...`.
+3. En el Scene Tree, verifica que el campo `controller` del nodo e-puck apunte al archivo `controlador.py`, controlador diseñado para este proyecto.
+4. Presiona el botón Play para iniciar la simulación y ver la navegación del e-puck en ese entorno.
+5. Tras 30 segundos de simulación, el controlador detendrá los motores automáticamente e imprimirá en la consola la tabla de datos utilizada para el análisis gráfico. Puedes pegar estos datos en el archivo `resultados.txt` de la carpeta `plots` y usar `graficar_datos.py` para obtener el gráfico de los datos.
