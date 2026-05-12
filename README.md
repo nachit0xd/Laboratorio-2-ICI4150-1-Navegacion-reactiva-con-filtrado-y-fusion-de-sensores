@@ -80,6 +80,8 @@ Las decisiones tomadas por el robot se basan en la distancia estimada por el fil
    B) **Giro:** El robot rota sobre su propio eje, evaluando los sensores laterales, para dirigir el escape hacia la zona con mayor espacio libre.
    C) **Continuar:** El robot retoma el avance hacia adelante gradualmente antes de devolver el control al estado de avance principal.
 
+En casos excepcionales, donde el robot se encuentra con una pared larga y se queda en modo de evasión por un largo tiempo, se implementa un giro de "emergencia" que lo ayuda a salir de ese obstáculo. 
+
 Esta lógica de navegación permite que el e-puck pueda moverse de forma ininterrumpida y sin problemas de oscilación o en las esquinas (chattering).
 
 # Resultados y desempeño en escenarios de prueba
@@ -101,9 +103,17 @@ Al observar la gráfica, podemos dividir el gráfico en secciones: 1) Encuentro 
 
 ## Resultados en los Escenarios de Prueba
 
+El controlador fue evaluado en dos escenarios distintos: simple (pocos obstáculos) y complejo (varios obstáculos). El desempeño del e-puck en esos escenarios se pueden visualizar en los vídeos `escenario_simple.mp4` y `escenario_complejo.mp4` de la carpeta `media`. Los resultados en aquellos escenarios se describen como:
+
 ### Escenario simple (pocos obstáculos):
 
+- **Movimiento estable:** En espacios abiertos, se nota que el robot mantiene una trayectoria relativamente estable. El robot requiere de 2 a 5 giros para esquivar un obstáculo cuadrado por completo, cosa que podría mejorar. La implementación de la corrección diferencial a las ruedas (lateral_correction) otorga al e-puck un comportamiento que lo aleja progresivamente de las paredes. En ningún momento choca contra un obstáculo.
+- **Capacidad para evitar colisiones:** La detección temprana del umbral (9 cm) garantizó un margen de maniobra amplio. El robot nunca llegó a impactar físicamente los obstáculos frontales.
+
 ### Escenario complejo (varios obstáculos y pasillos estrechos):
+
+- **Giro rápido y forzado:** El e-puck realiza una maniobra de evasión rápida contra cualquier obstáculo o pared, girando casi en 90 grados en algunos casos, lo que evita que se quede atrapado en modo evasión con un obstáculo largo. En caso de que lo anterior sucediera, existe el modo de evasión de emergencia para sacarlo de esa situación.
+- **Desempeño del giro:** Al retroceder primero, evaluar el espacio más despejado y rotar agresivamente durante el tiempo bloqueado por el temporizador, el e-puck demostró ser capaz de escapar de esquinas cerradas y trampas geométricas de forma fluida, reanudando su marcha solo cuando la vía estaba garantizadamente libre.
 
 # Conclusiones
 

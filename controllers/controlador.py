@@ -81,7 +81,11 @@ MAX_EVASION_STEPS = 45  # ~2.25 segundos de evasión
 evasion_phase = "idle"
 evasion_turn_dir = 1  # 1 = izquierda, -1 = derecha
 front_clear_steps = 0
-RELEASE_DIST = SAFE_DIST * 0.5 
+RELEASE_DIST = SAFE_DIST * 0.5
+evasion_attempt = 0  # Contador de intentos fallidos de giro
+MAX_EVASION_ATTEMPTS = 3  # Máximo de reintentos antes de forzar salida
+evasion_total_steps = 0  # Tiempo total en modo evasión
+MAX_EVASION_TOTAL = 200  # ~10 segundos máximo de evasión continua
 
 # Función que convierte la lectura cruda del sensor (0-4095) a una distancia en metros, basada en una tabla de conversión o fórmula específica del sensor
 def convertir_sensor_a_metros(valor_crudo):
@@ -194,10 +198,14 @@ while robot.step(TIME_STEP) != -1:
         evasion_steps = 8
         front_clear_steps = 0
         evasion_turn_dir = 1 if left_dist >= right_dist else -1
+        evasion_attempt = 0
+        evasion_total_steps = 0
         print(f"OBSTÁCULO DETECTADO! d_est={d_est:.3f}m, front_dist={front_dist:.3f}m")
 
     # Si estamos en modo de evasión, seguimos una secuencia que solo termina cuando el frente queda libre
     if evasion_mode:
+        evasion_total_steps += 1
+        
         if evasion_phase == "backoff":
             # Fase corta de retroceso para despegar el robot del obstáculo
             vL = -MAX_SPEED * 0.7
@@ -227,9 +235,11 @@ while robot.step(TIME_STEP) != -1:
 
             evasion_steps -= 1
 
-            # Si seguimos bloqueados al final del giro, cambiamos el sentido una vez para no pegarse al mismo obstáculo
+            # Si seguimos bloqueados al final del giro, cambiamos el sentido e incrementamos contador
             if evasion_steps == 9 and front_clear_steps == 0:
                 evasion_turn_dir *= -1
+                evasion_attempt += 1
+                print(f"  Intento fallido, cambiando dirección (intento {evasion_attempt})")
 
             if front_clear_steps >= 3:
                 evasion_mode = False
@@ -237,14 +247,36 @@ while robot.step(TIME_STEP) != -1:
                 evasion_steps = 0
                 front_clear_steps = 0
                 print("EVASIÓN COMPLETADA, frente despejado")
-            elif evasion_steps <= 0:
-                # Si aún no está libre, seguimos girando en lugar de salir demasiado pronto
-                evasion_steps = 10
+            elif evasion_steps <= 0 and evasion_attempt < MAX_EVASION_ATTEMPTS:
+                # Si aún no está libre y no hemos alcanzado el máximo de intentos, reintentar
+                evasion_steps = 18
+            elif evasion_steps <= 0 and evasion_attempt >= MAX_EVASION_ATTEMPTS:
+                # Si hemos agotado los intentos, hacer retroceso más agresivo
+                evasion_phase = "emergency_backoff"
+                evasion_steps = 15
+                print(f"  Máximo de intentos alcanzado. Retroceso de emergencia.")
 
-        else:
+        elif evasion_phase == "emergency_backoff":
+            # Retroceso agresivo para escapar de pared larga
+            vL = -MAX_SPEED * 0.9
+            vR = -MAX_SPEED * 0.9
+            evasion_steps -= 1
+            if evasion_steps <= 0:
+                # Después del retroceso de emergencia, forzar salida de evasión
+                evasion_mode = False
+                evasion_phase = "idle"
+                evasion_steps = 0
+                evasion_total_steps = 0
+                print("EVASIÓN FORZADA (máximo de intentos o pared larga)")
+
+        # Timeout global: si llevamos demasiado tiempo en evasión, salir forzadamente
+        if evasion_total_steps >= MAX_EVASION_TOTAL:
             evasion_mode = False
             evasion_phase = "idle"
             evasion_steps = 0
+            evasion_total_steps = 0
+            print("TIMEOUT DE EVASIÓN - Salida forzada tras 10 segundos")
+
     else:
         # CAMINO LIBRE - Avance normal con detección de pasillos/paredes
         base_speed = MAX_SPEED * 0.35
@@ -261,8 +293,8 @@ while robot.step(TIME_STEP) != -1:
 
     # Imprimir para depurar y ver cómo evolucionan las lecturas y la acción tomada
     print(f"FRENTE: Crudo={z_k:.3f}m | Kalman={d_est:.3f}m | Front_IR={front_dist:.3f}m", end="")
-    if evasion_steps > 0:
-        print(f" | EVASIÓN ({evasion_phase}:{evasion_steps})", end="")
+    if evasion_mode:
+        print(f" | EVASIÓN ({evasion_phase}:{evasion_steps} int:{evasion_attempt} t:{evasion_total_steps})", end="")
     print()
 
     # Clampeamos (es decir, limitamos) las velocidades a los límites físicos del robot
