@@ -1,6 +1,7 @@
 from controller import Robot
+import math
 
-# 1. Creamos la instancia del robot y definimos el tiempo de muestreo
+# Creamos la instancia del robot y definimos el tiempo de muestreo
 robot = Robot()
 TIME_STEP = 50 # Frecuencia de muestreo (Ts = 0.05 s)
 
@@ -43,19 +44,24 @@ MAX_SPEED = 6.28 # Velocidad máxima típica del e-puck, en rad/s
 
 # VARIABLES DEL FILTRO DE KALMAN
 # Valores iniciales
-d_est = 0.06 # Distancia inicial estimada (ej: 0.06 metros libre al frente)
-P = 1.0     # Incertidumbre inicial (covarianza)
+d_est = 0.06  # Distancia inicial estimada (m)
+P = 1.0       # Incertidumbre inicial (covarianza)
 
-# Constantes de sintonización del filtro (se pueden ajustar para mejorar el rendimiento)
-Q = 0.01 # Ruido del proceso (incertidumbre en nuestra odometría/motores)
-R = 0.05  # Ruido de la medición (varianza/incertidumbre del sensor infrarrojo)
+# Constantes de sintonización del filtro 
+# Q se escala con el movimiento (más movimiento -> mayor incertidumbre)
+Q_base = 0.0005  # ruido de proceso base
+R_base = 0.02    # ruido de medición base
+Q = Q_base
+R = R_base
+GATING_THRESHOLD = 0.06  # Umbral para detectar mediciones atípicas (m)
 
 # VARIABLES DE ALMACENAMIENTO
 raw_front_data = [] # Para guardar las lecturas crudas convertidas a metros (z_k) para gráficos finales
 filtered_front_data = [] # Para guardar las lecturas filtradas por EMA para gráficos finales
 kalman_front_data = [] # Para guardar la estimación fusionada
+time_data = [] # Para guardar los timestamps de cada lectura, útil para gráficos 
 
-# Variables auxiliares
+# VARIABLES AUXILIARES PARA CÁLCULO DE ODOMETRÍA
 prev_left_enc = 0.0
 prev_right_enc = 0.0
 first_step = True
@@ -68,21 +74,65 @@ SAFE_DIST = 0.09 # Si el Kalman estima que hay un obstáculo a 9 cm o menos, se 
 # Un temporizador para obligar al robot a completar el giro, importante para evitar que se quede atascado en situaciones de obstáculos cercanos
 turn_timer = 0
 
-# Variables para modo de evasión
+# VARIABLES PARA EL MODO DE EVASIÓN FORZADA
 evasion_mode = False 
 evasion_steps = 0
 MAX_EVASION_STEPS = 45  # ~2.25 segundos de evasión
+evasion_phase = "idle"
+evasion_turn_dir = 1  # 1 = izquierda, -1 = derecha
+front_clear_steps = 0
+RELEASE_DIST = SAFE_DIST * 0.5 
 
 # Función que convierte la lectura cruda del sensor (0-4095) a una distancia en metros, basada en una tabla de conversión o fórmula específica del sensor
 def convertir_sensor_a_metros(valor_crudo):
-    if valor_crudo <= 50:
-        return 0.10  # Libre (>10cm)
-    elif valor_crudo >= 3800:
-        return 0.01  # Muy cerca (1cm)
-    
-    # Modelo ajustado al rango del e-puck
-    distancia = 0.12 * (1 - valor_crudo / 4000.0)
+    # Conversión suavizada y monotónica del ADC a distancia en metros
+    # Evita saltos y da más peso a lecturas altas (cercanía).
+    # Asumimos ADC en [0, 4095], los valores extremos se clipean
+    adc = float(valor_crudo)
+    if math.isnan(adc):
+        return 0.12
+    adc = max(0.0, min(4095.0, adc))
+    # Si la lectura es muy baja, devolvemos rango máximo
+    if adc < 20.0:
+        return 0.12
+    # Si es muy alta, devolvemos cercanía mínima
+    if adc > 4000.0:
+        return 0.01
+
+    # Usamos un modelo exponencial para convertir el ADC a distancia, con parámetros elegidos para que el rango de salida sea aproximadamente [0.01, 0.12] metros, y que sea más sensible a cambios en el rango cercano
+    # Parámetros elegidos empíricamente para rango ~[0.01,0.12]
+    k = 6.5
+    distancia = 0.01 + 0.11 * math.exp(-k * (adc / 4095.0))
     return max(0.01, min(0.12, distancia))
+
+# Función de clamp para asegurar que las velocidades no excedan los límites físicos del robot
+def clamp(x, a, b):
+    return max(a, min(b, x))
+
+# Función de actualización del filtro de Kalman para la estimación de la distancia al frente, que fusiona la medición del sensor con la predicción basada en la odometría
+def kalman_update(d_prev, P_prev, z_meas, delta_d, Q_base, R_base):
+    # Etapa de predicción: la distancia al frente disminuye con el avance delta_d
+    d_pred = d_prev - delta_d
+    d_pred = max(0.01, d_pred)
+
+    # Escalamos Q con la magnitud del movimiento (más movimiento -> mayor incertidumbre)
+    Q = Q_base * (1.0 + abs(delta_d) * 50.0)
+    P_pred = P_prev + Q
+
+    # Si la medición difiere mucho de la predicción, aumentamos R temporalmente (gating)
+    innovation = z_meas - d_pred
+    R = R_base
+    if abs(innovation) > GATING_THRESHOLD:
+        R = R_base * 8.0
+
+    # Ganancia de Kalman
+    K = P_pred / (P_pred + R)
+
+    # Etapa de actualización
+    d_upd = d_pred + K * innovation
+    d_upd = max(0.01, min(0.12, d_upd))
+    P_upd = (1.0 - K) * P_pred
+    return d_upd, P_upd
 
 # INICIO DEL CONTROLADOR
 print("Controlador iniciado. Comenzando simulación...")
@@ -121,80 +171,80 @@ while robot.step(TIME_STEP) != -1:
         filtered_val = (alpha * z_k) + ((1.0 - alpha) * filtered_val)
 
     # 4. FILTRO DE KALMAN (FUSIÓN SENSORIAL)
-    
-    # ETAPA DE PREDICCIÓN
-    # El laboratorio define la predicción como la suma del estado anterior y el avance
-    d_pred = d_est - delta_d 
-
-    # Evitamos que la predicción sea negativa
-    if d_pred < 0.01:
-        d_pred = 0.01
-    
-    # Proyectamos la incertidumbre sumando el ruido del proceso (Q)
-    P_pred = P + Q 
-    
-    # ETAPA DE ACTUALIZACIÓN
-    # Calculamos la Ganancia de Kalman
-    K = P_pred / (P_pred + R) 
-    
-    # Actualizamos la estimación fusionando la predicción y la medición 
-    d_est = d_pred + K * (z_k - d_pred) 
-
-    # Ajustamos la estimación a un rango realista
-    d_est = max(0.01, min(0.12, d_est))
-    
-    # Actualizamos la incertidumbre para la próxima iteración
-    P = (1.0 - K) * P_pred 
+    # Usamos la lectura suavizada `filtered_val` como medición para reducir ruido
+    d_est, P = kalman_update(d_est, P, filtered_val, delta_d, Q_base, R_base)
 
     # 5. NAVEGACIÓN REACTIVA (Con evasión forzada)
     val_left = left_sensor.getValue()
     val_right = right_sensor.getValue()
-    val_fr = front_right_sensor.getValue()
-    val_fl = front_left_sensor.getValue()
-
-    # Detección de peligro
-    avg_front = (val_fr + val_fl) / 2.0
-    front_dist = convertir_sensor_a_metros(avg_front)
-    left_dist = convertir_sensor_a_metros(val_left) if val_left > 50 else 0.12
-    right_dist = convertir_sensor_a_metros(val_right) if val_right > 50 else 0.12
+    # Reutilizamos la lectura frontal máxima (más ADC -> más cercano)
+    front_dist = z_k
+    left_dist = convertir_sensor_a_metros(val_left) if val_left > 20 else 0.12
+    right_dist = convertir_sensor_a_metros(val_right) if val_right > 20 else 0.12
     
     vL = 0.0
     vR = 0.0
 
     # LÓGICA DE EVASIÓN y MOVIMIENTO
     # Si el Kalman estima que hay un obstáculo a 9 cm o menos, o si el sensor frontal detecta algo muy cercano, activamos la evasión forzada
-    if d_est <= SAFE_DIST or front_dist <= SAFE_DIST:
-        if evasion_steps == 0:
-            evasion_mode = True
-            evasion_steps = MAX_EVASION_STEPS
-            print(f"OBSTÁCULO DETECTADO! d_est={d_est:.3f}m, front_dist={front_dist:.3f}m") # Agregamos esta impresión para ver cuándo se activa la evasión
+    obstacle_detected = d_est <= SAFE_DIST or front_dist <= SAFE_DIST
+    if obstacle_detected and evasion_phase == "idle":
+        evasion_mode = True
+        evasion_phase = "backoff"
+        evasion_steps = 8
+        front_clear_steps = 0
+        evasion_turn_dir = 1 if left_dist >= right_dist else -1
+        print(f"OBSTÁCULO DETECTADO! d_est={d_est:.3f}m, front_dist={front_dist:.3f}m")
 
-    # Si estamos en modo de evasión, seguimos la estrategia definida, que incluye una fase de retroceso antes del giro, y luego una fase de reanudación gradual
-    if evasion_steps > 0:
-        # ESTRATEGIA DE EVASIÓN: Retroceder y girar
-        if evasion_steps > MAX_EVASION_STEPS * 0.7:
-            # FASE 1: Retroceder (0.5-1 segundo)
-            vL = -MAX_SPEED * 0.6
-            vR = -MAX_SPEED * 0.6
-        elif evasion_steps > MAX_EVASION_STEPS * 0.3:
-            # FASE 2: Girar hacia el lado con más espacio
-            if left_dist > right_dist:
-                vL = -MAX_SPEED * 0.5
-                vR = MAX_SPEED * 0.5
+    # Si estamos en modo de evasión, seguimos una secuencia que solo termina cuando el frente queda libre
+    if evasion_mode:
+        if evasion_phase == "backoff":
+            # Fase corta de retroceso para despegar el robot del obstáculo
+            vL = -MAX_SPEED * 0.7
+            vR = -MAX_SPEED * 0.7
+            evasion_steps -= 1
+            if evasion_steps <= 0:
+                evasion_phase = "turn"
+                evasion_steps = 18
+                print("  Cambio a giro agresivo")
+
+        elif evasion_phase == "turn":
+            # Giro agresivo sobre su eje para cambiar de dirección rápidamente
+            if evasion_turn_dir > 0:
+                vL = -MAX_SPEED * 0.9
+                vR = MAX_SPEED * 0.9
                 print("  Giro a la izquierda")
             else:
-                vL = MAX_SPEED * 0.5
-                vR = -MAX_SPEED * 0.5
+                vL = MAX_SPEED * 0.9
+                vR = -MAX_SPEED * 0.9
                 print("  Giro a la derecha")
+
+            # Si el frente ya quedó libre varios pasos seguidos, salimos de evasión
+            if front_dist > RELEASE_DIST and d_est > SAFE_DIST:
+                front_clear_steps += 1
+            else:
+                front_clear_steps = 0
+
+            evasion_steps -= 1
+
+            # Si seguimos bloqueados al final del giro, cambiamos el sentido una vez para no pegarse al mismo obstáculo
+            if evasion_steps == 9 and front_clear_steps == 0:
+                evasion_turn_dir *= -1
+
+            if front_clear_steps >= 3:
+                evasion_mode = False
+                evasion_phase = "idle"
+                evasion_steps = 0
+                front_clear_steps = 0
+                print("EVASIÓN COMPLETADA, frente despejado")
+            elif evasion_steps <= 0:
+                # Si aún no está libre, seguimos girando en lugar de salir demasiado pronto
+                evasion_steps = 10
+
         else:
-            # FASE 3: Reanudar avance gradualmente
-            vL = MAX_SPEED * 0.3
-            vR = MAX_SPEED * 0.3
-        
-        evasion_steps -= 1
-        if evasion_steps == 0:
             evasion_mode = False
-            print("EVASIÓN COMPLETADA, reanudando marcha")
+            evasion_phase = "idle"
+            evasion_steps = 0
     else:
         # CAMINO LIBRE - Avance normal con detección de pasillos/paredes
         base_speed = MAX_SPEED * 0.35
@@ -212,20 +262,21 @@ while robot.step(TIME_STEP) != -1:
     # Imprimir para depurar y ver cómo evolucionan las lecturas y la acción tomada
     print(f"FRENTE: Crudo={z_k:.3f}m | Kalman={d_est:.3f}m | Front_IR={front_dist:.3f}m", end="")
     if evasion_steps > 0:
-        print(f" | EVASIÓN ({evasion_steps})", end="")
-        if evasion_steps > MAX_EVASION_STEPS * 0.7:
-            print(" [RETROCESO]", end="")
-        elif evasion_steps > MAX_EVASION_STEPS * 0.3:
-            print(" [GIRO]", end="")
-        else:
-            print(" [REANUDANDO]", end="")
+        print(f" | EVASIÓN ({evasion_phase}:{evasion_steps})", end="")
     print()
+
+    # Clampeamos (es decir, limitamos) las velocidades a los límites físicos del robot
+    vL = clamp(vL, -MAX_SPEED, MAX_SPEED)
+    vR = clamp(vR, -MAX_SPEED, MAX_SPEED)
 
     # Aplicamos velocidades
     left_motor.setVelocity(vL)
     right_motor.setVelocity(vR)
 
     # 6. ALMACENAMIENTO DE DATOS PARA GRÁFICOS FINALES
+    # Guardamos datos con timestamp para análisis posterior
+    tiempo_seg = (step_count * TIME_STEP) / 1000.0
+    time_data.append(tiempo_seg)
     raw_front_data.append(z_k)
     filtered_front_data.append(filtered_val)
     kalman_front_data.append(d_est)
@@ -247,9 +298,8 @@ while robot.step(TIME_STEP) != -1:
         
         # Recorremos los arreglos e imprimimos fila por fila
         for i in range(len(raw_front_data)):
-            # Calculamos el tiempo transcurrido en segundos para esta muestra
-            tiempo_seg = (i * TIME_STEP) / 1000.0 
-            
+            # Usamos timestamps guardados
+            tiempo_seg = time_data[i]
             print(f"{tiempo_seg:.2f},{raw_front_data[i]:.4f},{filtered_front_data[i]:.4f},{kalman_front_data[i]:.4f}")
             
         print("="*50)

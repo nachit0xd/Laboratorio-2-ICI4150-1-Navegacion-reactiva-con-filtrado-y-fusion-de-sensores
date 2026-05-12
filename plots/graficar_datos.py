@@ -26,8 +26,8 @@ plt.plot(df['Tiempo(s)'], df['Kalman(m)'],
          label='Filtro de Kalman', color='forestgreen', linewidth=2)
 
 # Dibujamos una línea roja que marque el umbral de seguridad
-UMBRAL_SEGURO = 0.04
-plt.axhline(y=UMBRAL_SEGURO, color='red', linestyle='-.', alpha=0.5, label='Umbral de Giro (0.04m)')
+UMBRAL_SEGURO = 0.09
+plt.axhline(y=UMBRAL_SEGURO, color='red', linestyle='-.', alpha=0.5, label='Umbral de Giro (0.09m)')
 
 # Personalización de etiquetas, títulos y diseño
 plt.title('Navegación Reactiva: Fusión Sensorial con Filtro de Kalman', fontsize=14, fontweight='bold')
